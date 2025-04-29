@@ -57,11 +57,11 @@ float cosVecAngle(vec3d& a, vec3d& b) { // get cos of the angle between 2 vector
 
 class Camera {
 public:
-    vec3d pos;    // pos in global coords
-    vec3d front;       // local Z
-    vec3d right;       // local X
-    vec3d up;          // local Y
-    float yaw, pitch;  // rotation angles
+    vec3d pos;          // pos in global coords
+    vec3d front;        // local Z
+    vec3d right;        // local X
+    vec3d up;           // local Y
+    float yaw, pitch;   // rotation angles
 
     Camera(vec3d _pos = { 3, 3, 3 }) :
         pos(_pos), front({ 0, 0, -1 }), right({ 1, 0, 0 }), up({ 0, 1, 0 }),
@@ -93,19 +93,19 @@ vec3d applyCamera(vec3d point, Camera& cam) {
 
 class obj {
 public:
-    vector<vec3d> verts; // vertices
-    vector<vec3d> norms; // normals
-    vector<polygon> polys; // polygons
-    vec3d pos; // center pos
-    vec3d front; // local Z
-    vec3d right; // local X
-    vec3d up; // local Y
-    float mass; // mass
-    vec3d vel; // velocity
-    vec3d acc; // acceleration
-    vec3d angVel; // angular velocity
-    vec3d angAcc; // angular acceleration
-    float scale; // scale multiplier
+    vector<vec3d> verts;        // vertices
+    vector<vec3d> norms;        // normals
+    vector<polygon> polys;      // polygons
+    vec3d pos;                  // center pos
+    vec3d front;                // local Z
+    vec3d right;                // local X
+    vec3d up;                   // local Y
+    float mass;                 // mass
+    vec3d vel;                  // velocity
+    vec3d acc;                  // acceleration
+    vec3d angVel;               // angular velocity
+    vec3d angAcc;               // angular acceleration
+    float scale;                // scale multiplier
 
     obj(vector<vec3d> _verts, vector<vec3d> _norms, vector<polygon> _polys, float _mass = 0, float _scale = 1) :
         verts(_verts), norms(_norms), polys(_polys), mass(_mass), scale(_scale), front({ 0, 0, -1 }), right({ 1, 0, 0 }), up({ 0, 1, 0 }) {
@@ -182,7 +182,56 @@ public:
         }
     }
 
+    // GLOBAL
+    void moveUpGlobal(float a) {
+        pos.y += a;
+        for (auto& v : verts) {
+            v.y = v.y + a;
+        }
+    }
+    void moveDownGlobal(float a) {
+        pos.y -= a;
+        for (auto& v : verts) {
+            v.y = v.y - a;
+        }
+    }
+
+    void movecustom(vec3d& vec, float a) {
+        pos = pos - vec * a;
+        for (auto& v : verts) {
+            v = v - vec * a;
+        }
+    }
+
     void rotate(vec3d ang) { // rotate object
+        vec3d center = pos; // object center
+
+        // rotate around center
+        for (auto& v : verts) {
+            // get local coords of v
+            vec3d local = v - center;
+
+            // apply rotation
+            local = local.rotateVector(ang);
+
+            // get global coords of rotated v
+            v = center + local;
+        }
+
+        // rotate normals
+        for (auto& n : norms) {
+            n = n.rotateVector(ang);
+        }
+
+        // update local axises
+        front = front.rotateVector(ang).normalize();
+        right = right.rotateVector(ang).normalize();
+        up = up.rotateVector(ang).normalize();
+    }
+
+    void rotateAroundLocalFront(float angle) {
+        vec3d ang = front * -angle;
+
         vec3d center = pos; // object center
 
         // rotate around center
@@ -233,17 +282,54 @@ public:
         right = right.rotateVector(ang).normalize();
         up = up.rotateVector(ang).normalize();
     }
-    void draw(sf::RenderWindow& w, Camera& cam, vector<sf::Color> colors);
+    //void draw(sf::RenderWindow& w, Camera& cam, vector<sf::Color> colors);
 };
 
-void obj::draw(sf::RenderWindow& w, Camera& cam, vector<sf::Color> colors) {
+class light {
+public:
+    vec3d pos; // center pos
+    vec3d front; // local Z
+    vec3d right; // local X
+    vec3d up; // local Y
+
+    light(vec3d _pos) :
+        pos(_pos), front({ 0, 0, -1 }), right({ 1, 0, 0 }), up({ 0, 1, 0 }) {
+    }
+
+    void setPos(float x, float y, float z) {
+        vec3d p = { x, y, z };
+        pos = p;
+    }
+
+    // move object
+    void moveForward(float a) {
+        pos = pos - front * a;
+    }
+    void moveBackward(float a) {
+        pos = pos + front * a;
+    }
+    void moveRight(float a) {
+        pos = pos + right * a;
+    }
+    void moveLeft(float a) {
+        pos = pos - right * a;
+    }
+    void moveUp(float a) {
+        pos = pos + up * a;
+    }
+    void moveDown(float a) {
+        pos = pos - up * a;
+    }
+};
+
+void draw(sf::RenderWindow& w, obj& o, Camera& cam, light& sun, vector<sf::Color> colors) {
     std::vector<sf::Vector2f> projections;
     std::vector<float> depths; // vector for sorting
 
     // verts and norms translation
-    for (size_t i = 0; i < verts.size(); ++i) {
+    for (size_t i = 0; i < o.verts.size(); ++i) {
         // apply cam transformation to verts
-        vec3d v = verts[i];
+        vec3d v = o.verts[i];
 
         vec3d transformed = applyCamera(v, cam);
 
@@ -264,8 +350,8 @@ void obj::draw(sf::RenderWindow& w, Camera& cam, vector<sf::Color> colors) {
 
     // get all polys to the pairs with idxes
     vector<pair<float, size_t>> sortedPolys;
-    for (size_t i = 0; i < polys.size(); i++) {
-        auto& p = polys[i];
+    for (size_t i = 0; i < o.polys.size(); i++) {
+        auto& p = o.polys[i];
         p.color = colors[i];
         sortedPolys.emplace_back((depths[p(0)] + depths[p(1)] + depths[p(2)]) / 3.0f, i);
     }
@@ -276,7 +362,7 @@ void obj::draw(sf::RenderWindow& w, Camera& cam, vector<sf::Color> colors) {
 
     // drawing polys
     for (const auto& [depth, i] : sortedPolys) {
-        auto& p = polys[i];
+        auto& p = o.polys[i];
 
         // if polygon is behind cam
         if (projections[p(0)].x < -999 ||
@@ -284,10 +370,11 @@ void obj::draw(sf::RenderWindow& w, Camera& cam, vector<sf::Color> colors) {
             projections[p(2)].x < -999) continue;
 
         // normal to the current polygon
-        vec3d normal = norms[p.vn.x].normalize();
+        vec3d normal = o.norms[p.vn.x].normalize();
 
         // vector from poly to cam
-        vec3d viewDir = (cam.pos - (verts[p(0)] + verts[p(1)] + verts[p(2)]) / 3).normalize();
+        vec3d viewDir = (cam.pos - (o.verts[p(0)] + o.verts[p(1)] + o.verts[p(2)]) / 3).normalize();
+        vec3d lightDir = (sun.pos - (o.verts[p(0)] + o.verts[p(1)] + o.verts[p(2)]) / 3).normalize();
 
         // checking vesebelety through normal
         if (dot(normal, viewDir) >= 0.0f) {
@@ -295,10 +382,9 @@ void obj::draw(sf::RenderWindow& w, Camera& cam, vector<sf::Color> colors) {
             triangle.setPoint(0, projections[p(0)]);
             triangle.setPoint(1, projections[p(1)]);
             triangle.setPoint(2, projections[p(2)]);
-            //triangle.setFillColor(sf::Color(getRandom(0, 255), getRandom(0, 255), getRandom(0, 255)));
-            //triangle.setFillColor(getRandomColor(sf::Color(255, 0, 208), sf::Color(20, 255, 0)));
-            //triangle.setFillColor(sf::Color(255, 0, 208));
-            triangle.setFillColor(sf::Color(p.color.r * cosVecAngle(normal, viewDir), p.color.g * cosVecAngle(normal, viewDir), p.color.b * cosVecAngle(normal, viewDir)));
+
+            if (dot(normal, lightDir) < 0.0f) triangle.setFillColor(sf::Color(0, 0, 0));
+            else triangle.setFillColor(sf::Color(p.color.r * cosVecAngle(normal, lightDir), p.color.g * cosVecAngle(normal, lightDir), p.color.b * cosVecAngle(normal, lightDir)));
             //triangle.setOutlineColor(sf::Color(20, 255, 0));
             //triangle.setOutlineThickness(0.5);
             w.draw(triangle);
@@ -306,7 +392,8 @@ void obj::draw(sf::RenderWindow& w, Camera& cam, vector<sf::Color> colors) {
     }
 }
 
-void drawScene(const std::vector<obj>& objects, sf::RenderWindow& w, Camera& cam, const std::vector<sf::Color>& colors) {
+void drawScene(const std::vector<obj>& objects, sf::RenderWindow& w, Camera& cam, light& sun, const std::vector<sf::Color>& colors) {
+    if (objects.empty()) return;
     // counting all verts, norms, polys
     size_t totalVerts = 0;
     size_t totalNorms = 0;
@@ -361,7 +448,8 @@ void drawScene(const std::vector<obj>& objects, sf::RenderWindow& w, Camera& cam
 
     // drawing scene
     obj scene(V, N, P);
-    scene.draw(w, cam, C);
+    draw(w, scene, cam, sun, C);
+    //scene.draw(w, cam, C);
 }
 
 int main() {
@@ -376,29 +464,44 @@ int main() {
     vector<vec3d> nRat;
     vector<polygon> pRat;
 
+    vector<vec3d> vCube;
+    vector<vec3d> nCube;
+    vector<polygon> pCube;
 
     loadOBJ("Axe.obj", vAxe, nAxe, pAxe);
     loadOBJ("Rat.obj", vRat, nRat, pRat);
+    loadOBJ("cube.obj", vCube, nCube, pCube);
 
     obj axe(vAxe, nAxe, pAxe, 0, 2);
     obj rat(vRat, nRat, pRat, 0, 100);
+    obj cube(vCube, nCube, pCube, 0, 2);
 
     // cam
     Camera cam{ {50, 100, 50} };
 
+    // LIGHT
+    light LIGHT({ 50, 100, 50 });
+
     sf::Vector2i lastMousePos = { 0, 0 };
 
 
-    float speed = 0.5f;
-    float ascSpeed = 1.0f;
+    float speed = 3.0f;
+    float ascSpeed = 4.0f;
     float rotSpeed = 0.03f;
     float sensitivity = 0.5f;
 
     sf::Color color0(255, 0, 208);
     sf::Color color1(90, 90, 90);
+    sf::Color cubeColor(20, 255, 0);
     float x = 0.0f;
 
+
+    sf::Mouse::setPosition({ 0, 0 });
+
+
     axe.setPos(0, 100, -70);
+
+    cube.setPos(50, 100, 50);
 
     while (window.isOpen()) {
         sf::Event event;
@@ -415,13 +518,13 @@ int main() {
         //axe.moveForward(0.3 * cos(x));
         axe.rotate({ 0.05f * cos(x - 1.0f), 0, 0 });
 
-        color0.r += 5 * speed;
+        color0.r += 1 * speed;
         color0.g = 2 * color0.r;
         color0.b = 3 * color0.g;
 
-
         vector<sf::Color> cAxe;
         vector<sf::Color> cRat;
+        vector<sf::Color> cCube;
 
         vector<sf::Color> colors;
 
@@ -433,6 +536,10 @@ int main() {
         for (int i = 0; i < pRat.size(); i++) {
             cRat.push_back(color1);
             colors.push_back(color1);
+        }
+        for (int i = 0; i < pCube.size(); i++) {
+            cCube.push_back(cubeColor);
+            colors.push_back(cubeColor);
         }
 
 
@@ -457,8 +564,37 @@ int main() {
             cam.pos = cam.pos - globalUp * 3 * ascSpeed;
         }
 
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) speed = 2.0f;
-        else speed = 0.3f;
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::LShift)) speed = 9.0f;
+        else speed = 3.0f;
+
+        // LIGHT movement
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Up)) {
+            LIGHT.pos = LIGHT.pos - cam.front * speed;
+            cube.movecustom(cam.front, speed);
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Down)) {
+            LIGHT.pos = LIGHT.pos + cam.front * speed;
+            vec3d antifront = cam.front * (-1);
+            cube.movecustom(antifront, speed);
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) {
+            LIGHT.pos = LIGHT.pos - cam.right * speed;
+            vec3d antiright = cam.right * (-1);
+            cube.movecustom(antiright, speed);
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)) {
+            LIGHT.pos = LIGHT.pos + cam.right * speed;
+            cube.movecustom(cam.right, speed);
+        }
+
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::RShift)) {
+            LIGHT.pos = LIGHT.pos + globalUp * 3 * ascSpeed;
+            cube.moveUpGlobal(3 * ascSpeed);
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::RControl)) {
+            LIGHT.pos = LIGHT.pos - globalUp * 3 * ascSpeed;
+            cube.moveDownGlobal(3 * ascSpeed);
+        }
 
         // cam rotation
         sf::Vector2i mousePos = sf::Mouse::getPosition(window);
@@ -468,17 +604,18 @@ int main() {
         cam.pitch += mouseDelta.y * sensitivity;
         cam.pitch = std::clamp(cam.pitch, -89.0f, 89.0f);
 
+        cube.rotate({ 0, -mouseDelta.x * sensitivity * pi / 180, 0 });
+        //cube.rotateAroundLocalFront(mouseDelta.y * sensitivity * pi / 180);
+
         // update after rotation
         cam.updateVectors();
 
         lastMousePos = mousePos;
-        window.clear();
+        window.clear(sf::Color::Yellow);
 
-        vector<obj> OBJS = { axe, rat };
+        vector<obj> OBJS = { axe, rat, cube };
 
-
-
-        drawScene(OBJS, window, cam, colors);
+        drawScene(OBJS, window, cam, LIGHT, colors);
 
         //vec3d ang(0.0, 0.1, 0.0);
 
