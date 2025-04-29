@@ -579,12 +579,12 @@ int main() {
         }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Left)) {
             LIGHT.pos = LIGHT.pos - cam.right * speed;
-            vec3d antiright = cam.right * (-1);
-            cube.movecustom(antiright, speed);
+            cube.movecustom(cam.right, speed);
         }
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Right)) {
             LIGHT.pos = LIGHT.pos + cam.right * speed;
-            cube.movecustom(cam.right, speed);
+            vec3d antiright = cam.right * (-1);
+            cube.movecustom(antiright, speed);
         }
 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::RShift)) {
