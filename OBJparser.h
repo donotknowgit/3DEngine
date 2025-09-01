@@ -82,6 +82,10 @@ struct vec3d {
         vec3d ans(x / a, y / a, z / a);
         return ans;
     }
+
+    bool operator ==(const vec3d& v) {
+        return (x == v.x && y == v.y && z == v.z) ? 1 : 0;
+    }
 };
 
 struct polygon {

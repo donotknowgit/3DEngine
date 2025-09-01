@@ -3,13 +3,15 @@
 #include <iostream>
 #include <OBJparser.h>
 #include <random>
+#include <climits>
+#include <cfloat>
 
 using namespace std;
 
 
 
 constexpr int width = 1600;
-constexpr int height = 800;
+constexpr int height = 900;
 constexpr int centerX = width / 2;
 constexpr int centerY = height / 2;
 
@@ -43,7 +45,7 @@ vec3d vecProd(vec3d a, vec3d b) {
     return ans;
 }
 
-float cosVecAngle(vec3d& a, vec3d& b) { // get cos of the angle between 2 vectors
+float cosVecAngle(vec3d a, vec3d b) { // get cos of the angle between 2 vectors
     float lenA = a.normEuc();
     float lenB = b.normEuc();
 
@@ -53,6 +55,10 @@ float cosVecAngle(vec3d& a, vec3d& b) { // get cos of the angle between 2 vector
     cosTheta = max(-1.0f, min(1.0f, cosTheta));
 
     return cosTheta;
+}
+
+float dist(vec3d a, vec3d b) {
+    return sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y) + (b.z - a.z) * (b.z - a.z));
 }
 
 class Camera {
@@ -291,17 +297,21 @@ public:
     vec3d front; // local Z
     vec3d right; // local X
     vec3d up; // local Y
+    float density = 100;
 
     light(vec3d _pos) :
-        pos(_pos), front({ 0, 0, -1 }), right({ 1, 0, 0 }), up({ 0, 1, 0 }) {
-    }
+        pos(_pos), front({ 0, 0, -1 }), right({ 1, 0, 0 }), up({ 0, 1, 0 }) {}
 
     void setPos(float x, float y, float z) {
         vec3d p = { x, y, z };
         pos = p;
     }
 
-    // move object
+    void setDensity(float d) {
+        density = d;
+    }
+
+    // move light
     void moveForward(float a) {
         pos = pos - front * a;
     }
@@ -373,10 +383,11 @@ void draw(sf::RenderWindow& w, obj& o, Camera& cam, light& sun, vector<sf::Color
         vec3d normal = o.norms[p.vn.x].normalize();
 
         // vector from poly to cam
-        vec3d viewDir = (cam.pos - (o.verts[p(0)] + o.verts[p(1)] + o.verts[p(2)]) / 3).normalize();
-        vec3d lightDir = (sun.pos - (o.verts[p(0)] + o.verts[p(1)] + o.verts[p(2)]) / 3).normalize();
+        vec3d polyCenter = (o.verts[p(0)] + o.verts[p(1)] + o.verts[p(2)]) / 3;
+        vec3d viewDir = (cam.pos - polyCenter).normalize();
+        vec3d lightDir = (sun.pos - polyCenter).normalize();
 
-        // checking vesebelety through normal
+        // checking visibility through normal
         if (dot(normal, viewDir) >= 0.0f) {
             sf::ConvexShape triangle(3);
             triangle.setPoint(0, projections[p(0)]);
@@ -384,7 +395,16 @@ void draw(sf::RenderWindow& w, obj& o, Camera& cam, light& sun, vector<sf::Color
             triangle.setPoint(2, projections[p(2)]);
 
             if (dot(normal, lightDir) < 0.0f) triangle.setFillColor(sf::Color(0, 0, 0));
-            else triangle.setFillColor(sf::Color(p.color.r * cosVecAngle(normal, lightDir), p.color.g * cosVecAngle(normal, lightDir), p.color.b * cosVecAngle(normal, lightDir)));
+            else {
+                float r = p.color.r * cosVecAngle(normal, lightDir) * sun.density / dist(sun.pos, polyCenter);
+                float g = p.color.g * cosVecAngle(normal, lightDir) * sun.density / dist(sun.pos, polyCenter);
+                float b = p.color.b * cosVecAngle(normal, lightDir) * sun.density / dist(sun.pos, polyCenter);
+                if (r > 255) r = 255;
+                if (g > 255) g = 255;
+                if (b > 255) b = 255;
+                sf::Color currentColor(r, g, b);
+                triangle.setFillColor(currentColor);
+            }
             //triangle.setOutlineColor(sf::Color(20, 255, 0));
             //triangle.setOutlineThickness(0.5);
             w.draw(triangle);
@@ -449,7 +469,6 @@ void drawScene(const std::vector<obj>& objects, sf::RenderWindow& w, Camera& cam
     // drawing scene
     obj scene(V, N, P);
     draw(w, scene, cam, sun, C);
-    //scene.draw(w, cam, C);
 }
 
 int main() {
@@ -490,10 +509,12 @@ int main() {
     float rotSpeed = 0.03f;
     float sensitivity = 0.5f;
 
-    sf::Color color0(255, 0, 208);
+    sf::Color color0(255, 150, 150);
     sf::Color color1(90, 90, 90);
     sf::Color cubeColor(20, 255, 0);
     float x = 0.0f;
+    float xx = 0.05f;
+    float xlast = xx;
 
 
     sf::Mouse::setPosition({ 0, 0 });
@@ -516,11 +537,12 @@ int main() {
         //axe.moveUp(cos(x));
         //axe.moveRight((sin(x) + cos(x)) / 2);
         //axe.moveForward(0.3 * cos(x));
-        axe.rotate({ 0.05f * cos(x - 1.0f), 0, 0 });
 
-        color0.r += 1 * speed;
-        color0.g = 2 * color0.r;
-        color0.b = 3 * color0.g;
+        axe.rotate({ xx * cos(x - 1.0f), 0, 0 });
+
+        //color0.r += 1 * speed;
+        //color0.g = 2 * color0.r;
+        //color0.b = 3 * color0.g;
 
         vector<sf::Color> cAxe;
         vector<sf::Color> cRat;
@@ -595,6 +617,27 @@ int main() {
             LIGHT.pos = LIGHT.pos - globalUp * 3 * ascSpeed;
             cube.moveDownGlobal(3 * ascSpeed);
         }
+        //LIGHT density
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Equal)) {
+            LIGHT.density += 1;
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Hyphen)) {
+            LIGHT.density -= 1;
+        }
+        //Axe rotation speed
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num0)) {
+            xx += 0.0001;
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num9)) {
+            xx -= 0.0001;
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num7)) {
+            if (xx != 0) xlast = xx;
+            xx = 0;
+        }
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::Num8)) {
+            xx = xlast;
+        }
 
         // cam rotation
         sf::Vector2i mousePos = sf::Mouse::getPosition(window);
@@ -611,7 +654,7 @@ int main() {
         cam.updateVectors();
 
         lastMousePos = mousePos;
-        window.clear(sf::Color::Yellow);
+        window.clear(sf::Color::Green);
 
         vector<obj> OBJS = { axe, rat, cube };
 
